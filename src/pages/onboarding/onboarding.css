@@ -1,0 +1,129 @@
+/* Onboarding Flow Styling */
+.onboarding-page {
+    min-height: 100vh;
+    background: var(--color-bg);
+    display: flex;
+    flex-direction: column;
+}
+
+.onboarding-progress {
+    padding: var(--space-6) var(--space-8);
+    max-width: 400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.onboarding-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+}
+
+.onboarding-step {
+    width: 100%;
+    max-width: 420px;
+}
+
+/* Welcome Screen */
+.onboarding-welcome {
+    text-align: center;
+    padding: var(--space-8) var(--space-4);
+}
+
+.onboarding-logo-mark {
+    width: 72px;
+    height: 72px;
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-2xl);
+    font-weight: var(--font-weight-bold);
+    margin: 0 auto var(--space-6);
+    box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+}
+
+.onboarding-brand {
+    font-size: var(--font-4xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    letter-spacing: -1px;
+    margin-bottom: var(--space-4);
+}
+
+.onboarding-tagline {
+    font-size: var(--font-lg);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-3);
+    line-height: var(--line-height-relaxed);
+}
+
+.onboarding-desc {
+    font-size: var(--font-base);
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--space-10);
+}
+
+/* Step Card */
+.onboarding-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    padding: var(--space-8);
+    box-shadow: var(--shadow-sm);
+}
+
+.onboarding-step-title {
+    font-size: var(--font-xl);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-2);
+}
+
+.onboarding-step-desc {
+    font-size: var(--font-base);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-6);
+}
+
+.onboarding-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--space-6);
+    gap: var(--space-3);
+}
+
+/* Complete Screen */
+.onboarding-complete {
+    text-align: center;
+    padding: var(--space-8) var(--space-4);
+}
+
+.onboarding-check {
+    margin-bottom: var(--space-6);
+}
+
+.onboarding-complete .onboarding-step-title {
+    font-size: var(--font-2xl);
+    margin-bottom: var(--space-3);
+}
+
+.onboarding-complete .onboarding-step-desc {
+    margin-bottom: var(--space-8);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .onboarding-card {
+        padding: var(--space-6);
+        border-radius: var(--radius-lg);
+    }
+
+    .onboarding-brand {
+        font-size: var(--font-3xl);
+    }
+}
