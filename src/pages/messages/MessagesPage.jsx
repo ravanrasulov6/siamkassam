@@ -4,7 +4,7 @@ import {
     BarChart2, Shield, Zap, ThumbsUp, ThumbsDown, Inbox,
     MoreVertical, ArrowLeft, Download, Share2
 } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { messagesService } from '../../services/messages.service';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -92,7 +92,7 @@ export default function MessagesPage() {
 
     const exportToPDF = () => {
         if (!selectedMessage) return;
-        const doc = jsPDF({
+        const doc = new jsPDF({
             orientation: 'p',
             unit: 'mm',
             format: 'a4',
