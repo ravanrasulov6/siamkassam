@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, UserPlus, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Phone, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import logo from '../../assets/5logo.png';
 import './auth.css';
 
 export default function RegisterPage() {
     const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
@@ -62,6 +63,20 @@ export default function RegisterPage() {
                                 placeholder="ad@misal.com"
                                 required
                                 autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label htmlFor="phone">Mobil nömrə</label>
+                        <div className="input-with-icon">
+                            <Phone className="input-icon" size={18} />
+                            <input
+                                id="phone"
+                                type="tel"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                placeholder="+994 50 000 00 00"
                             />
                         </div>
                     </div>

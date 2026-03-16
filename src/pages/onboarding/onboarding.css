@@ -1,6 +1,7 @@
 /* Onboarding Flow Styling */
 .onboarding-page {
     min-height: 100vh;
+    min-height: 100dvh;
     background: var(--color-bg);
     display: flex;
     flex-direction: column;
@@ -118,12 +119,21 @@
 
 /* Responsive */
 @media (max-width: 480px) {
+    .onboarding-page {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    
     .onboarding-card {
-        padding: var(--space-6);
+        padding: var(--space-5);
         border-radius: var(--radius-lg);
     }
 
     .onboarding-brand {
         font-size: var(--font-3xl);
+    }
+    
+    .onboarding-progress {
+        padding: var(--space-4);
     }
 }

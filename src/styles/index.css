@@ -25,6 +25,9 @@ body {
   color: var(--color-text-primary);
   line-height: 1.6;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent; /* Remove blue tap highlight on mobile */
 }
 
 /* --- Design Tokens --- */
@@ -91,18 +94,17 @@ body {
   --color-text: #334155;
   --color-text-link: var(--color-primary);
 
-  /* Typography Scale (1.25 ratio) */
+  /* Typography Scale (Refined for less aggressiveness) */
   --font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
-  /* Fluid Typography Scale (Smooth scaling across devices) */
-  --font-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.8rem);
-  --font-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
-  --font-base: clamp(0.875rem, 0.825rem + 0.25vw, 1rem);
-  --font-md: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
-  --font-lg: clamp(1.125rem, 1.05rem + 0.35vw, 1.375rem);
-  --font-xl: clamp(1.375rem, 1.25rem + 0.6vw, 1.75rem);
-  --font-2xl: clamp(1.575rem, 1.35rem + 0.9vw, 2.25rem);
-  --font-3xl: clamp(2rem, 1.8rem + 1.1vw, 2.925rem);
-  --font-4xl: clamp(2.5rem, 2rem + 2.25vw, 4rem);
+  --font-xs: clamp(0.7rem, 0.65rem + 0.1vw, 0.75rem);
+  --font-sm: clamp(0.8rem, 0.75rem + 0.15vw, 0.875rem);
+  --font-base: clamp(0.9375rem, 0.9rem + 0.2vw, 1rem); /* Base around 15-16px */
+  --font-md: clamp(1.0625rem, 1rem + 0.3vw, 1.125rem);
+  --font-lg: clamp(1.2rem, 1.1rem + 0.4vw, 1.3rem);
+  --font-xl: clamp(1.35rem, 1.25rem + 0.6vw, 1.6rem);
+  --font-2xl: clamp(1.6rem, 1.5rem + 0.8vw, 2rem);
+  --font-3xl: clamp(2rem, 1.8rem + 1vw, 2.5rem);
+  --font-4xl: clamp(2.25rem, 2rem + 1.5vw, 3rem);
 
   /* Premium Glassmorphism Tokens (Light Mode Refined) */
   --glass-bg: rgba(255, 255, 255, 0.7);
@@ -472,6 +474,9 @@ label {
 /* --- App Root --- */
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ============================================
@@ -482,13 +487,21 @@ label {
 @media (max-width: 767px) {
   :root {
     --sidebar-width: 0px;
-    --font-base: 0.8125rem;
-    /* 13px */
-    --font-md: 0.875rem;
-    /* 14px */
-    --font-3xl: 1.5rem;
-    /* Default reduced for mobile */
+    /* Static font sizes for mobile to prevent zoom issues and overflow */
+    --font-xs: 0.75rem;
+    --font-sm: 0.875rem;
+    --font-base: 16px; /* 16px to stop iOS Safari zoom on inputs */
+    --font-md: 1.125rem;
+    --font-lg: 1.25rem;
+    --font-xl: 1.5rem;
+    --font-2xl: 1.75rem;
+    --font-3xl: 2rem;
+    --font-4xl: 2.25rem;
     --space-6: 1rem;
+    
+    /* Performance optimization for mobile */
+    --glass-blur: blur(6px); 
+    --shadow-persuasive: 0 4px 12px rgba(0,0,0,0.08); /* Simpler shadow for mobile CPU */
   }
 
   .main-content {
@@ -543,6 +556,9 @@ label {
   box-shadow: var(--glass-shadow);
   border-radius: var(--radius-lg);
   transition: transform var(--transition-base), box-shadow var(--transition-base);
+  /* Hardware acceleration for scroll performance */
+  transform: translateZ(0);
+  will-change: transform, box-shadow;
 }
 
 .glass-card:hover {

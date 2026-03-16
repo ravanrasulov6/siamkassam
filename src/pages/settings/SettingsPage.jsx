@@ -5,11 +5,12 @@ import { useToast } from '../../context/ToastContext';
 import {
     Briefcase, Users, Printer, Shield, User,
     AtSign, Phone, MapPin, Hash, Save,
-    Plus, X, Check, Eye
+    Plus, X, Check, Eye, MessageCircle
 } from 'react-feather';
+import { whatsappService } from '../../services/whatsapp.service';
 
 export default function SettingsPage() {
-    const { business, updateProfile } = useAuth();
+    const { business, updateProfile, refreshProfile } = useAuth();
     const { showSuccess, showError, showInfo } = useToast();
     const [activeTab, setActiveTab] = useState('profile');
 
@@ -30,6 +31,13 @@ export default function SettingsPage() {
     });
     const [receiptSaving, setReceiptSaving] = useState(false);
 
+    // WhatsApp settings
+    const [whatsappStatus, setWhatsappStatus] = useState({ phone: '', verified: false });
+    const [waInput, setWaInput] = useState('');
+    const [waCodeInput, setWaCodeInput] = useState('');
+    const [waStep, setWaStep] = useState('input'); // input, verify, success
+    const [waLoading, setWaLoading] = useState(false);
+
     useEffect(() => {
         if (business) {
             setFormData({
@@ -38,6 +46,14 @@ export default function SettingsPage() {
                 address: business.address || '',
                 tax_id: business.tax_id || ''
             });
+            setWhatsappStatus({
+                phone: business.whatsapp_phone || '',
+                verified: !!business.whatsapp_verified
+            });
+            if (business.whatsapp_phone) {
+                setWaInput(business.whatsapp_phone);
+                if (business.whatsapp_verified) setWaStep('success');
+            }
             loadEmployees();
         }
     }, [business]);
@@ -86,6 +102,39 @@ export default function SettingsPage() {
         }, 300);
     }
 
+    async function handleWhatsAppVerify() {
+        try {
+            setWaLoading(true);
+            await whatsappService.initiateVerification(waInput);
+            setWaStep('verify');
+            showInfo('Təsdiqləmə kodu WhatsApp nömrənizə göndərildi');
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            setWaLoading(false);
+        }
+    }
+
+    async function handleConfirmCode() {
+        try {
+            setWaLoading(true);
+            await whatsappService.verifyCode(waCodeInput);
+            setWaStep('success');
+            setWhatsappStatus(prev => ({ ...prev, verified: true }));
+            await refreshProfile();
+            showSuccess('Numrəniz uğurla təsdiqləndi!');
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            setWaLoading(false);
+        }
+    }
+
+    function handleResetWhatsApp() {
+        setWaStep('input');
+        setWaCodeInput('');
+    }
+
     useEffect(() => {
         const saved = localStorage.getItem('siam_receipt_settings');
         if (saved) {
@@ -96,7 +145,8 @@ export default function SettingsPage() {
     const tabs = [
         { key: 'profile', icon: <Briefcase size={18} />, label: 'Biznes Profili' },
         { key: 'users', icon: <Users size={18} />, label: 'İstifadəçilər & Rollar' },
-        { key: 'receipts', icon: <Printer size={18} />, label: 'Çek Tənzimləmələri' }
+        { key: 'receipts', icon: <Printer size={18} />, label: 'Çek Tənzimləmələri' },
+        { key: 'whatsapp', icon: <MessageCircle size={18} />, label: 'WhatsApp İnteqrasiyası' }
     ];
 
     return (
@@ -396,6 +446,106 @@ export default function SettingsPage() {
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '4px', background: 'repeating-linear-gradient(90deg, #ccc, #ccc 2px, transparent 2px, transparent 4px)' }}></div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'whatsapp' && (
+                        <div className="glass-card animate-fade-in" style={{ padding: 'var(--space-8)', borderRadius: '24px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-8)' }}>
+                                <div style={{ background: '#25D36622', color: '#25D366', padding: '10px', borderRadius: '12px' }}>
+                                    <MessageCircle size={24} />
+                                </div>
+                                <h2 style={{ fontSize: 'var(--font-xl)', fontWeight: 'bold' }}>WhatsApp İnteqrasiyası</h2>
+                            </div>
+
+                            <div style={{ maxWidth: '600px' }}>
+                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-6)', lineHeight: '1.6' }}>
+                                    Siam Kassam-ı WhatsApp ilə əlaqələndirərək səsli mesajlarla məhsul əlavə edə, satışlar barədə məlumat ala və AI köməkçisindən istifadə edə bilərsiniz.
+                                </p>
+
+                                {waStep === 'input' && (
+                                    <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                        <div className="form-group">
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={14} /> WhatsApp Nömrəniz</label>
+                                            <input 
+                                                type="tel" 
+                                                className="input" 
+                                                placeholder="+99450XXXXXXX" 
+                                                value={waInput} 
+                                                onChange={e => setWaInput(e.target.value)} 
+                                                style={{ height: '52px', borderRadius: '14px', fontSize: '16px' }} 
+                                            />
+                                            <small style={{ marginTop: '8px', display: 'block', color: 'var(--color-text-tertiary)' }}>
+                                                Nömrəni beynəlxalq formatda daxil edin (məs: +994501234567)
+                                            </small>
+                                        </div>
+                                        <button 
+                                            className="btn btn-primary btn-lg btn-animate" 
+                                            onClick={handleWhatsAppVerify}
+                                            disabled={waLoading || !waInput}
+                                            style={{ backgroundColor: '#25D366', borderColor: '#25D366', borderRadius: '14px' }}
+                                        >
+                                            {waLoading ? <div className="spinner"></div> : 'Təsdiqləmə Kodu Göndər'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {waStep === 'verify' && (
+                                    <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                        <div style={{ padding: '16px', background: 'var(--color-bg)', borderRadius: '12px', marginBottom: '8px', borderLeft: '4px solid #25D366' }}>
+                                            <p style={{ margin: 0, fontSize: '14px' }}>
+                                                <b>{waInput}</b> nömrəsinə 6 rəqəmli kod göndərildi. Zəhmət olmasa daxil edin.
+                                            </p>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Təsdiqləmə Kodu</label>
+                                            <input 
+                                                type="text" 
+                                                className="input" 
+                                                placeholder="123456" 
+                                                maxLength="6"
+                                                value={waCodeInput} 
+                                                onChange={e => setWaCodeInput(e.target.value)} 
+                                                style={{ height: '52px', borderRadius: '14px', textAlign: 'center', fontSize: '24px', letterSpacing: '8px', fontWeight: 'bold' }} 
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                            <button className="btn btn-outline btn-animate" onClick={handleResetWhatsApp} style={{ flex: 1, borderRadius: '14px' }}>Geri</button>
+                                            <button 
+                                                className="btn btn-primary btn-animate" 
+                                                onClick={handleConfirmCode}
+                                                disabled={waLoading || waCodeInput.length < 6}
+                                                style={{ flex: 2, backgroundColor: '#25D366', borderColor: '#25D366', borderRadius: '14px' }}
+                                            >
+                                                {waLoading ? <div className="spinner"></div> : 'Təsdiqlə'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {waStep === 'success' && (
+                                    <div className="animate-fade-in" style={{ textAlign: 'center', padding: '40px 0' }}>
+                                        <div style={{ background: '#25D36622', color: '#25D366', width: '80px', height: '80px', borderRadius: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+                                            <Check size={40} />
+                                        </div>
+                                        <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>WhatsApp Bağlandı!</h3>
+                                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '32px' }}>
+                                            <b>{waInput}</b> nömrəsi ilə sistemdən istifadə edə bilərsiniz.
+                                        </p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', textAlign: 'left' }}>
+                                            <div className="glass-card" style={{ padding: '16px', borderRadius: '16px', background: 'var(--color-bg)' }}>
+                                                <h4 style={{ fontSize: '14px', marginBottom: '8px', fontWeight: 'bold' }}>Səsli Əmrlər</h4>
+                                                <p style={{ fontSize: '12px', margin: 0, opacity: 0.7 }}>"30 manatlıq çörək aldım" yazın və ya səs atın.</p>
+                                            </div>
+                                            <div className="glass-card" style={{ padding: '16px', borderRadius: '16px', background: 'var(--color-bg)' }}>
+                                                <h4 style={{ fontSize: '14px', marginBottom: '8px', fontWeight: 'bold' }}>Sorğular</h4>
+                                                <p style={{ fontSize: '12px', margin: 0, opacity: 0.7 }}>"Bu gün nə qədər satış olub?" deyə soruşun.</p>
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-link btn-animate" onClick={handleResetWhatsApp} style={{ marginTop: '32px', color: 'var(--color-text-tertiary)' }}>Nömrəni Dəyiş</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

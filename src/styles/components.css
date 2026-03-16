@@ -21,6 +21,11 @@
     user-select: none;
     outline: none;
     will-change: transform, box-shadow;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active:not(:disabled) {
+    transform: scale(0.97);
 }
 
 .btn:focus-visible {
@@ -110,6 +115,8 @@
     padding: var(--space-6);
     box-shadow: var(--shadow-card);
     transition: box-shadow var(--transition-base), transform var(--transition-base);
+    transform: translateZ(0);
+    will-change: box-shadow, transform;
 }
 
 .card:hover {

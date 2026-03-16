@@ -210,7 +210,9 @@ export function AuthProvider({ children }) {
             currency: state.profile.biz_currency,
             logo_url: state.profile.biz_logo_url,
             phone: state.profile.biz_phone,
-            address: state.profile.biz_address
+            address: state.profile.biz_address,
+            whatsapp_phone: state.profile.whatsapp_phone,
+            whatsapp_verified: state.profile.whatsapp_verified
         } : null,
         signUp,
         signIn,
