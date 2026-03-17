@@ -303,3 +303,115 @@
 .premium-execute-btn:active {
     transform: translateY(0);
 }
+
+/* =========================================================================
+   MOBILE RESPONSIVENESS (< 768px)
+========================================================================= */
+
+@media (max-width: 768px) {
+    /* Main Layout */
+    .ai-hub-container {
+        padding: 0 !important; /* Remove outer padding for full edge-to-edge feel */
+    }
+
+    /* Make the chat container full height on mobile like a native app */
+    .unified-chat-container {
+        height: calc(100dvh - 120px) !important; /* Use dvh for mobile browsers */
+        min-height: 400px;
+        border-radius: 20px 20px 0 0 !important;
+        border: none !important;
+        border-bottom: 0 !important;
+    }
+
+    /* Unified Input Bar (Chat Text Area) */
+    .unified-input-bar {
+        margin: 12px 16px 16px 16px !important;
+        padding: 6px !important;
+        border-radius: 20px !important;
+        gap: 8px !important;
+    }
+
+    /* Chat Bubbles */
+    .chat-bubble {
+        max-width: 90% !important; /* Give more width to text on small screens */
+        padding: 12px 16px !important;
+        font-size: 14px !important;
+    }
+    
+    .chat-scroll-area {
+        padding: 20px 16px !important;
+        gap: 16px !important;
+    }
+
+    /* Give chat icons a bit less padding */
+    .action-btn {
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 12px !important;
+    }
+
+    .action-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .typing-area {
+        padding: 8px 12px !important;
+        font-size: 14px !important;
+    }
+
+    /* Modals (Pending Entries & Text Review) */
+    .raw-text-review-modal,
+    .payment-modal-content-premium,
+    .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 24px 24px 0 0 !important;
+        margin-top: auto; /* Push down to bottom like a bottom sheet */
+        border: none !important;
+    }
+
+    .modal-overlay {
+        align-items: flex-end !important; /* Align bottom sheet to bottom */
+        padding: 0 !important; /* Remove modal overlay padding */
+    }
+
+    /* Payment Modal Specific Overrides */
+    .payment-header-premium {
+        padding: 32px 24px !important;
+        border-radius: 0 !important; /* It is already inside the border-radiused content */
+    }
+
+    .payment-header-premium h2 {
+        font-size: 24px !important;
+    }
+
+    .payment-body-premium {
+        padding: 24px !important;
+        gap: 24px !important;
+    }
+
+    .premium-input-field {
+        height: 64px !important;
+        font-size: 28px !important;
+    }
+
+    .amount-value {
+        font-size: 24px !important;
+    }
+
+    .premium-execute-btn {
+        height: 60px !important;
+        font-size: 16px !important;
+    }
+
+    /* Hide redundant elements if screen is too small */
+    .premium-pct-grid {
+        gap: 8px !important;
+    }
+    
+    .premium-pct-btn {
+        height: 44px !important;
+        font-size: 13px !important;
+    }
+}
