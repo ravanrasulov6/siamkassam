@@ -8,6 +8,15 @@ export function useCustomers(initialFilters = {}) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [filters, setFilters] = useState({ search: '', status: '', ...initialFilters });
+    const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
+
+    // Debounce search input to avoid lagging the UI on slow devices & mobile
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(filters.search);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [filters.search]);
 
     const fetchCustomers = useCallback(async () => {
         if (!business?.id) return;
@@ -16,9 +25,9 @@ export function useCustomers(initialFilters = {}) {
             setError(null);
             let data = await customersService.getAll(business.id);
 
-            // Client-side filtering
-            if (filters.search) {
-                const query = filters.search.toLowerCase();
+            // Client-side filtering with debounced query
+            if (debouncedSearch) {
+                const query = debouncedSearch.toLowerCase();
                 data = data.filter(c =>
                     c.first_name.toLowerCase().includes(query) ||
                     (c.last_name && c.last_name.toLowerCase().includes(query)) ||
@@ -37,7 +46,7 @@ export function useCustomers(initialFilters = {}) {
         } finally {
             setLoading(false);
         }
-    }, [business?.id, filters]);
+    }, [business?.id, debouncedSearch, filters.status]);
 
     useEffect(() => {
         fetchCustomers();

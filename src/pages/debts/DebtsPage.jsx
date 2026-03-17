@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import ReceivablesTab from './ReceivablesTab';
-import PayablesTab from './PayablesTab';
+import React, { useState, lazy, Suspense } from 'react';
+
+// Lazy load heavy tab components to improve Initial Load Time
+const ReceivablesTab = lazy(() => import('./ReceivablesTab'));
+const PayablesTab = lazy(() => import('./PayablesTab'));
 
 const tabs = [
     {
@@ -89,8 +91,15 @@ export default function DebtsPage() {
 
             {/* Tab Content */}
             <div className="animate-fade-in-up stagger-3">
-                {activeTab === 'receivables' && <ReceivablesTab />}
-                {activeTab === 'payables' && <PayablesTab />}
+                <Suspense fallback={
+                    <div className="card glass-card" style={{ padding: '40px', textAlign: 'center' }}>
+                        <div className="spinner" style={{ margin: '0 auto 16px' }}></div>
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-sm)' }}>Məlumatlar yüklənir...</p>
+                    </div>
+                }>
+                    {activeTab === 'receivables' && <ReceivablesTab />}
+                    {activeTab === 'payables' && <PayablesTab />}
+                </Suspense>
             </div>
         </div>
     );
