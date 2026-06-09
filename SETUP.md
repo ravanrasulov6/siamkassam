@@ -1,173 +1,157 @@
-# Project Setup & Development Guidelines
+# Siam Kassam: Flutter Offline-First Architecture & Setup
 
-Welcome to the Siam Kassam project documentation. This document outlines the development system, coding standards, architecture, and best practices used throughout the application.
-
----
-
-## 1. Project Overview
-
-*   **Purpose:** A modern, high-performance business management system designed to handle inventory, expenses, debts, and AI-assisted data entry (Siam Köməkçi).
-*   **Tech Stack:**
-    *   **Frontend Library:** React.js (Vite)
-    *   **Routing:** React Router DOM
-    *   **State Management:** React Context API & Local State
-    *   **Backend / Database:** Supabase (PostgreSQL, Auth, Storage)
-    *   **Styling:** Pure CSS with CSS Variables & Glassmorphism Aesthetics
-    *   **Icons:** Lucide React / React Feather
-*   **Future Scalability (Flutter Migration Consideration):**
-    This web application is designed with a potential future migration to a desktop and mobile application using Flutter. To support this, business logic is explicitly separated from UI components. API service layers and modularized styling make transposing the application's structure to Dart/Flutter significantly easier.
+## Overview
+This document outlines the production-grade, enterprise-level architecture for the Flutter migration of Siam Kassam, prioritizing an **Offline-First** capability, structural scalability, and zero-compromise point-of-sale functionality regardless of network conditions.
 
 ---
 
-## 2. Project Structure
+## 1. Full Clean Architecture (Strict)
 
-The codebase follows a feature-first, modular architecture to promote separation of concerns.
+The architecture is strictly divided into three layers to eliminate coupling between UI and data sources.
 
-```text
-src/
-├── assets/          # Static files (images, fonts)
-├── components/      # Reusable and isolated UI components
-│   ├── dashboard/   # Dashboard specific components (KPICard, Charts)
-│   ├── layout/      # App layout (Sidebar, Header, Layout Wrappers)
-│   └── ui/          # Generic UI elements (Modal, DataTable, GlassCard)
-├── context/         # Global State Management (AuthContext, ToastContext)
-├── hooks/           # Custom reusable React hooks (useCustomers, useDebounce)
-├── lib/             # Third-party configuration (supabase.js)
-├── pages/           # Page routes (grouped by feature)
-│   ├── ai/          # AI Hub feature
-│   ├── auth/        # Login/Register pages
-│   ├── debts/       # Debts management feature
-│   └── ...
-├── services/        # API communication layer (business logic separation)
-└── styles/          # Global styles, variables, and component stylesheets
+### Domain Layer (The Core)
+Fully independent of Flutter and external packages.
+- **Entities**: Pure Dart structures representing business models (e.g., `CustomerEntity`, `DebtEntity`).
+- **UseCases**: Single-responsibility callable classes orchestrating business logic (e.g., `AddCustomerUseCase`, `SyncOfflineDataUseCase`, `CalculateCartTotalUseCase`). **The UI only interacts with UseCases.**
+- **Repository Interfaces**: Abstract classes defining the data contracts (e.g., `abstract class CustomerRepository`).
+
+### Data Layer (Implementation)
+- **DataSources**: The specific mechanisms to get/save data. 
+  - `RemoteDataSource`: Interacts exclusively with Supabase REST/RPC APIs.
+  - `LocalDataSource`: Interacts with the local database.
+- **Repository Implementations**: Implements the Domain repository interfaces. This layer contains the logic determining whether to fetch from local or remote, and how to merge data.
+- **Models / DTOs**: Data Transfer Objects containing `fromJson`/`toJson` logic, mapping backend JSON to Domain Entities via `.toEntity()`.
+
+**Data Flow Sequence:**
+UI Widget → Riverpod Notifier → UseCase → Repository → DataSource (Local/Remote) → Model → Entity → UseCase → Riverpod Notifier → UI
+
+---
+
+## 2. Offline-First Architecture (Critical Feature)
+
+The application MUST function seamlessly without internet access if the user has an active session.
+
+**Offline Capabilities Provided:**
+- **Add Customer**: Saves locally, queues for sync.
+- **Add Debt (Payables/Receivables)**: Saves locally, recalculates local balances instantly.
+- **Create Sales (POS)**: Entire checkout process functions offline.
+- **Data Viewing**: All lists (Customers, Products, Debts) load from the local cache instantly, acting as a single source of truth.
+
+---
+
+## 3. Local Database Design (Isar)
+
+**Choice Justification: Isar Database**
+We use **Isar** instead of Hive. Given Siam Kassam's relational complexity (Sales containing SaleItems, Customers linked to Debts), Hive (a flat key-value store) requires manual, slow, in-memory joining. Isar supports complex querying, relational links, multi-entry indexing, and full-text search out of the box, offering superior performance for an offline-first Desktop/Mobile SaaS.
+
+**Local Schemas (Isar Collections):**
+- **Customer**: `id`, `name`, `phone`, `createdAt`, `updatedAt`, `syncStatus` (Enum: SYNCED, PENDING_INSERT, PENDING_UPDATE).
+- **Debt**: `id`, `customerId`, `amount`, `type` (Payable/Receivable), `dueDate`, `syncStatus`.
+- **Product**: `id`, `name`, `barcode`, `price`, `stockQuantity`. Use Isar Full-Text Search on `name` and `barcode` for offline POS scanning.
+- **Sale**: `id`, `date`, `totalAmount`, `customerId` (optional), `syncStatus`.
+- **SaleItem** (Linked to Sale): `id`, `saleId`, `productId`, `quantity`, `price`.
+
+---
+
+## 4. Sync Engine Design
+
+The Sync Engine regulates the eventual consistency between local (Isar) and remote (Supabase).
+
+**Queue Structure:**
+We utilize Isar to track pending states. Every local record has a `syncStatus` enum (`SYNCED`, `PENDING_INSERT`, `PENDING_UPDATE`, `CONFLICT`). 
+
+**When Offline:**
+1. User creates a Sale.
+2. Saved to Isar with a locally generated `UUID v4` and `syncStatus = PENDING_INSERT`.
+3. Notifies internal queue listener.
+
+**When Internet Returns:**
+1. Background worker (`connectivity_plus` combined with a Riverpod background listener) detects network restoration.
+2. Triggers `SyncOfflineDataUseCase`.
+3. Fetches all records where `syncStatus != SYNCED`.
+4. Executes structured sync batches (e.g., Sync Customers first to prevent ForeignKey errors for Sales).
+
+**Conflict Resolution Strategy:**
+- *Timestamp Wins / Latest Override*: Compares `updated_at`. If an admin changed a debt online, but a local user updated it offline simultaneously, the newer `updated_at` takes precedence. 
+- *Failure Handling*: If a sync fails (e.g., Supabase rejects due to RLS or missing foreign keys), `syncStatus` becomes `CONFLICT`, and a visual indicator informs the user in the AppBar.
+- *Retry Mechanism*: Exponential backoff (retry after 5s, 15s, 60s, then 5 mins).
+
+---
+
+## 5. Data Sources Layer & Merging
+
+Repositories coordinate the DataSources.
+- **RemoteDataSource (Supabase):** Contains `getCustomers()`, `upsertCustomer()`.
+- **LocalDataSource (Isar):** Contains `getCachedCustomers()`, `saveCustomerLocally()`, `getPendingSync()`.
+
+**Merge Logic (Repository implementation):**
+```dart
+Future<List<CustomerEntity>> getCustomers() async {
+  // Always fetch and return Local Cache FIRST for 0ms loading times
+  final localData = await localDataSource.getCachedCustomers();
+  
+  if (networkInfo.isConnected) {
+    try {
+      // Fetch fresh data in the background
+      final remoteData = await remoteDataSource.getCustomers();
+      // Update local cache quietly
+      await localDataSource.cacheCustomers(remoteData);
+      // Return fresh data
+      return remoteData.map((e) => e.toEntity()).toList();
+    } catch (e) {
+      // If remote fails, fallback entirely to local data
+      return localData.map((e) => e.toEntity()).toList();
+    }
+  }
+  
+  return localData.map((e) => e.toEntity()).toList();
+}
 ```
 
-**Separation of Concerns:**
-*   **Pages:** Act as containers. They fetch data via hooks/services and pass it down to components.
-*   **Components:** Pure, presentation-focused UI elements. They receive props and dispatch events.
-*   **Services:** All Supabase interactions and data formatting happen here. No UI logic should exist in the services.
-*   **Hooks:** Encapsulate complex state logic and lifecycle effects.
+---
+
+## 6. State Management (Advanced Riverpod)
+
+- **`AsyncNotifierProvider`**: Handles asynchronous remote/local data fetching. Yields explicit `AsyncLoading` (for initial loads), `AsyncData` (successful data), and `AsyncError`.
+- **`NotifierProvider` / `StateNotifierProvider`**: Used for immediate, synchronous local interactions (e.g., the POS Cart logic).
+- **Network State**: A global `connectivityProvider` drives an offline banner UI globally without polluting feature-specific providers.
 
 ---
 
-## 3. Coding Standards
+## 7. POS (Sales) Offline Strategy
 
-*   **Naming Conventions:**
-    *   **Files:** PascalCase for React components (`DebtsPage.jsx`, `Modal.jsx`). camelCase for utility and service files (`auth.service.js`, `formatUtils.js`).
-    *   **Variables/Functions:** camelCase (`handleLogin`, `userData`).
-    *   **Constants:** UPPER_SNAKE_CASE (`MAX_UPLOAD_SIZE`, `API_ENDPOINTS`).
-    *   **Components:** PascalCase (`<GlassCard />`).
-*   **Clean Code Principles:**
-    *   Keep functions small and focused on a single responsibility (SOLID).
-    *   Use descriptive variable names. Avoid abbreviations like `c` for customer unless in a very tight loop (e.g., `customers.map(c => ...)`).
-    *   Comment the "why", not the "what". The code should explain what is happening.
-*   **Reusable Component Design Rules:**
-    *   Components should not fetch their own data unless they are a complex, self-contained widget.
-    *   Rely on `children` and generic props (`className`, `style`) to allow flexibility.
+The checkout flow must never block the user.
+1. The Cart operates in a synchronous Riverpod `Notifier`.
+2. On hitting "Complete Sale", the `CheckoutUseCase` converts the Cart state into a `Sale` Entity and multiple `SaleItem` Entities.
+3. These are written to Isar in a single synchronous `writeTxn`.
+4. The `Sale` is marked `PENDING_INSERT`.
+5. The Cart clears immediately, enabling the next customer checkout within milliseconds.
+6. The Sync Worker detects the `PENDING_INSERT` and bulk-upserts the Sale and Items to Supabase in the background. Because UUIDs are generated *locally*, duplicate transmissions due to spotty internet result in safe idempotent Upserts on Supabase.
 
 ---
 
-## 4. State Management
+## 8. Desktop + Mobile Shared Strategy
 
-*   **Context API:** Used for genuinely global, infrequently changing state.
-    *   `AuthContext`: User session, session verification, and business context layer.
-    *   `ToastContext`: Global notification system.
-*   **Local State (`useState` / `useReducer`):** Used for component-specific state (form inputs, toggle switches, local loading spinners).
-*   **Why Not Redux/Zustand?** The application currently relies heavily on remote server state (Supabase). For our current complexity, Context API + Custom Hooks (`useCustomers`, `useProducts`) is sufficient and keeps the bundle size small. If client-side caching requirements grow complex, a tool like React Query (@tanstack/react-query) is preferred over Redux.
-
----
-
-## 5. API Handling
-
-*   **API Layer Structure:** All database and external API calls are centralized in the `src/services/` directory. For example, `debts.service.js` handles all RPC calls, inserts, and updates for debts.
-*   **Error Handling:** Services throw standard Javascript `Error` objects. The UI layer (pages/components) catches these errors and displays them using the `ToastContext` (`showError(err.message)`).
-*   **Loading States:** Custom hooks and pages maintain a `loading` boolean state. This is used to display skeleton loaders or spinners, ensuring a smooth UX rather than abrupt UI shifts.
+- **100% Shared Business Logic:** Using Clean Architecture ensures UI logic doesn't leak into services. Domain and Data layers are universally identical on Desktop and Mobile.
+- **Adaptive UI Layer:** We utilize `responsive_builder` or Flutter's native `LayoutBuilder`.
+- **Platform-Specific UX:**
+  - **Desktop**: Grid layouts, `DataTable` for complex lists, persistent Sidebars, window_manager customization, and heavy `Shortcuts`/`Actions` for fast keyboard POS checkouts.
+  - **Mobile**: Swipeable generic `ListView` cards, `BottomNavigationBar` / Slide-out `Drawer`, Pull-to-Refresh, native bottom-sheet drill-downs.
 
 ---
 
-## 6. UI/UX Guidelines
+## 9. Performance & Data Consistency
 
-*   **Design Consistency:** The app uses a "Premium White Glassmorphism" aesthetic. Heavy use of translucency, smooth shadows (`box-shadow`), and rounded corners (`border-radius: var(--radius-2xl)`).
-*   **Responsiveness:**
-    *   Mobile-first consideration.
-    *   Use of unified CSS variables (`--space-*`, `--font-*`) for consistency.
-    *   Heavy use of CSS Grid (`grid-template-columns: repeat(auto-fit, minmax(...))`) for fluid layouts.
-    *   Specific mobile breakpoints (`@media (max-width: 768px)`) adapt layouts (e.g., bottom-sheet modals instead of centered dialogs, edge-to-edge chat layouts).
-*   **Accessibility Basics:**
-    *   Use semantic HTML (`<button>`, `<nav>`, `<main>`).
-    *    Maintain sufficient color contrast, particularly on text atop glassmorphism panels.
+- **Caching Strategy:** By querying Isar first, we bypass the typical Flutter "loading spinner" phase entirely for returning users.
+- **Data Integrity:** Ensuring Local IDs match Remote IDs via UUID v4 generation on the client-side prevents auto-increment ID conflicts during offline merging.
+- **Duplicate Prevention:** Using Riverpod's native caching mechanisms and `.keepAlive()` ensures we don't spam Supabase with redundant API calls if navigating between screens rapidly.
 
 ---
 
-## 7. Performance Optimization
+## 10. Testing Strategy (Upgrade)
 
-*   **Debouncing:** Heavy operations, such as search filtering across large arrays in `useCustomers`, are debounced (e.g., 300ms) to prevent UI thread blocking on mobile.
-*   **Lazy Loading:** Large route components and heavy internal UI blocks (like the `ReceivablesTab` and `PayablesTab` on the Debts page) are lazy-loaded via `React.lazy()` and `<Suspense>` to improve the First Contentful Paint.
-*   **Animation Throttling:** The app respects user system settings. Heavy CSS animations and blur effects are disabled using `@media (prefers-reduced-motion: reduce)` to support low-end devices and save battery.
-*   **Hardware Acceleration:** Expensive UI transitions utilize `transform: translateZ(0)` to force GPU rendering and reduce frame drops.
-
----
-
-## 8. Environment Setup
-
-*   **Required Tools:** Node.js (v18+), npm/yarn/pnpm, Git.
-*   **Installation Steps:**
-    1.  `git clone <repository_url>`
-    2.  `cd siamkassam`
-    3.  `npm install`
-    4.  Copy `.env.example` to `.env` and fill in credentials.
-    5.  `npm run dev`
-*   **Environment Variables:**
-    ```env
-    VITE_SUPABASE_URL=your_supabase_project_url
-    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-    ```
-
----
-
-## 9. Git Workflow
-
-*   **Branching Strategy:**
-    *   `main`: Production-ready code.
-    *   `development` (optional): Integration branch.
-    *   `feature/*` or `fix/*`: Used for developing specific features or fixing bugs (e.g., `feature/ai-voice-input`).
-*   **Commit Message Conventions:** Use imperative mood.
-    *   `feat: add intelligent debt parsing`
-    *   `fix: resolve mobile scrolling issue on Safari`
-    *   `style: implement glassmorphism on dashboard`
-    *   `perf: debounce customer search input`
-*   **Code Review Rules:** Ensure responsive layout works on both Desktop and Mobile views before pushing.
-
----
-
-## 10. Testing Strategy
-
-*(Future Implementation Phase)*
-*   **Unit Testing:** `Vitest` and `React Testing Library`. Used to test pure functions in `services/` and visual correctness of isolated components in `components/ui/`.
-*   **Integration Testing:** Verify flows such as Authentication, Debt Creation, and App Routing.
-*   **Manual Testing Checklists:** Focus heavily on cross-device functionality (iOS Safari vs Android Chrome) due to glassmorphism rendering quirks.
-
----
-
-## 11. Preparation for Flutter Migration
-
-To ensure a smooth transition to a Flutter desktop/mobile app in the future:
-*   **Strict Logic Separation:** The `src/services/` logic maps perfectly to Dart Repositories/Services. Keep React component files free of complex database queries.
-*   **API-First Design:** Treat the Supabase database as a headless backend. The Flutter app will consume the exact same database rules, RLS policies, and RPC functions.
-*   **State Abstraction:** The current Context/Hook approach in React translates well to Provider/Riverpod in Flutter. Ensure state is logically grouped (e.g., Auth, Theme, Business Context).
-*   **Semantic UI Construction:** React layouts using standard flexbox/grid mimic Flutter's `Row`, `Column`, and `GridView`. Keeping the UI component tree shallow and compositional in React will make porting to Flutter Widgets easier.
-
----
-
-## 12. Best Practices & Anti-Patterns
-
-**Do's:**
-*   Always use the centralized `showSuccess`/`showError` toast context for user feedback.
-*   Use CSS variables defined in `index.css` for all colors, spacing, and font sizes to maintain brand identity.
-*   Gracefully handle loading states (`isLoading`) and empty states (no data returned).
-
-**Anti-Patterns (Avoid):**
-*   **Inline styles for layout:** Avoid writing large `style={{ ... }}` blocks for complex layouts; use CSS classes.
-*   **Prop Drilling:** Do not pass props down more than 2-3 levels. If a prop is needed deeply, consider Context API or component composition.
-*   **Direct DOM manipulation:** Avoid `document.getElementById` or `querySelector`. Use React `useRef` if direct node access is absolutely necessary.
-*   **God Components:** If a file exceeds 400 lines (with exceptions for highly complex single-view screens), consider breaking it down into smaller sub-components.
+A production-grade system requires rigorous testing across layers:
+- **UseCase Unit Tests**: Using `mocktail` or `mockito`, we assert that business logic calculations (like applying a discount code in the POS Cart UseCase) work independent of Flutter Widgets.
+- **Repository Tests**: Mocking `RemoteDataSource` and `LocalDataSource`. We assert edge cases: "When Remote throws a SocketException, does the Repository correctly return Local Cache Data?"
+- **Sync Engine Integration Tests**: Seed a mock Isar DB with 5 `PENDING_INSERT` records, toggle mock connectivity to `TRUE`, and assert that the Supabase Mock receives exactly 5 `upsert` calls.
+- **Offline/Online UI Switching**: Widget Tests simulating `hasConnection = false` to guarantee the Offline Banner and cached states render without crashing.
