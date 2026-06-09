@@ -9,13 +9,25 @@ export function useProducts(initialFilters = {}) {
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [filters, setFilters] = useState(initialFilters);
+    const [filters, setFilters] = useState({ search: '', category: '', stockStatus: '', ...initialFilters });
+    const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
+
+    // Debounce search input to avoid lagging the UI on slow devices & mobile
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(filters.search);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [filters.search]);
 
     const fetchProducts = useCallback(async () => {
         if (!business?.id) return;
         try {
             setLoading(true);
-            const data = await productsService.getAll(business.id, filters);
+            const data = await productsService.getAll(business.id, {
+                ...filters,
+                search: debouncedSearch
+            });
             setProducts(data);
             setError(null);
         } catch (err) {
@@ -23,7 +35,7 @@ export function useProducts(initialFilters = {}) {
         } finally {
             setLoading(false);
         }
-    }, [business?.id, filters]);
+    }, [business?.id, debouncedSearch, filters.category, filters.stockStatus]);
 
     const fetchCategories = useCallback(async () => {
         if (!business?.id) return;

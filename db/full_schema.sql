@@ -373,3 +373,71 @@ DROP TRIGGER IF EXISTS update_customers_updated_at ON public.customers;
 CREATE TRIGGER update_customers_updated_at 
     BEFORE UPDATE ON public.customers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ==========================================
+-- 15. TRANZAKSİYA TƏHLÜKƏSİZLİYİ (CHECKOUT RPC)
+-- ==========================================
+CREATE OR REPLACE FUNCTION public.process_checkout_v3(
+    p_business_id UUID,
+    p_cashier_id UUID,
+    p_customer_id UUID,
+    p_payment_method TEXT,
+    p_paid_amount DECIMAL(12,2),
+    p_discount_amount DECIMAL(12,2),
+    p_items JSONB
+) RETURNS UUID AS $$
+DECLARE
+    v_sale_id UUID;
+    v_item RECORD;
+    v_total_amount DECIMAL(12,2) := 0;
+    v_final_amount DECIMAL(12,2);
+BEGIN
+    -- 1. Calculate total amount
+    FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(id UUID, quantity DECIMAL, sell_price DECIMAL) LOOP
+        v_total_amount := v_total_amount + (v_item.quantity * v_item.sell_price);
+    END LOOP;
+    
+    v_final_amount := v_total_amount - p_discount_amount;
+
+    -- 2. Create Sale record
+    INSERT INTO public.sales (business_id, cashier_id, customer_id, total_amount, discount_amount, final_amount, payment_method, paid_amount, status)
+    VALUES (p_business_id, p_cashier_id, p_customer_id, v_total_amount, p_discount_amount, v_final_amount, p_payment_method, p_paid_amount, 'completed')
+    RETURNING id INTO v_sale_id;
+
+    -- 3. Loop through items to insert sale items and update stock
+    FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(id UUID, name TEXT, quantity DECIMAL, sell_price DECIMAL) LOOP
+        -- Insert sale item
+        INSERT INTO public.sale_items (sale_id, product_id, product_name, quantity, unit_price, subtotal)
+        VALUES (v_sale_id, v_item.id, v_item.name, v_item.quantity, v_item.sell_price, v_item.quantity * v_item.sell_price);
+
+        -- Update product inventory
+        UPDATE public.products 
+        SET stock_quantity = stock_quantity - v_item.quantity,
+            updated_at = NOW()
+        WHERE id = v_item.id AND business_id = p_business_id;
+        
+        -- Insert into stock log
+        INSERT INTO public.product_stock_log (product_id, business_id, quantity_change, reason)
+        VALUES (v_item.id, p_business_id, -v_item.quantity, 'POS Satış #' || v_sale_id);
+    END LOOP;
+
+    -- 4. If payment method is credit, increase customer debt
+    IF p_payment_method = 'credit' AND p_customer_id IS NOT NULL THEN
+        UPDATE public.customers 
+        SET total_debt = total_debt + v_final_amount,
+            updated_at = NOW()
+        WHERE id = p_customer_id AND business_id = p_business_id;
+
+        -- Record debt transaction
+        INSERT INTO public.debt_transactions (business_id, customer_id, reference_sale_id, transaction_type, amount, balance_after)
+        VALUES (p_business_id, p_customer_id, v_sale_id, 'debt_increase', v_final_amount, (SELECT total_debt FROM public.customers WHERE id = p_customer_id));
+    END IF;
+
+    RETURN v_sale_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Sürətli axtarış və performans indeksləri
+CREATE INDEX IF NOT EXISTS idx_sales_created_at ON public.sales(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON public.customers(first_name, last_name);
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON public.expenses(expense_date DESC);
