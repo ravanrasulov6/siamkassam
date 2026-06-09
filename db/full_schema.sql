@@ -9,6 +9,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    business_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    onboarding_completed BOOLEAN DEFAULT FALSE,
     first_name TEXT,
     last_name TEXT,
     biz_name TEXT,
