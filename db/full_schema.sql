@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS public.customers (
     last_name TEXT,
     phone TEXT,
     total_debt DECIMAL(12,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- ==========================================
@@ -121,10 +122,14 @@ CREATE TABLE IF NOT EXISTS public.sale_items (
 CREATE TABLE IF NOT EXISTS public.expenses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
+    title TEXT,
     amount DECIMAL(12,2) NOT NULL DEFAULT 0,
     expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
     status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'pending')),
+    category TEXT,
+    notes TEXT,
+    payment_method TEXT DEFAULT 'cash',
+    created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -134,8 +139,12 @@ CREATE TABLE IF NOT EXISTS public.expenses (
 CREATE TABLE IF NOT EXISTS public.expense_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
+    title TEXT,
     amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    category TEXT,
+    notes TEXT,
+    icon TEXT DEFAULT 'Bookmark',
+    due_day INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -327,3 +336,40 @@ CREATE INDEX IF NOT EXISTS idx_expenses_business_id ON public.expenses(business_
 CREATE INDEX IF NOT EXISTS idx_payables_business_status ON public.payables(business_id, status);
 CREATE INDEX IF NOT EXISTS idx_debt_transactions_business_id ON public.debt_transactions(business_id);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_business_id ON public.ai_messages(business_id);
+
+-- ==========================================
+-- 14. GÜNLÜK SATIŞ HESABATI VİEW-U (DAILY SALES STATS VIEW)
+-- ==========================================
+CREATE OR REPLACE VIEW public.daily_sales_stats 
+WITH (security_invoker = true) AS
+SELECT 
+    business_id,
+    (created_at AT TIME ZONE 'UTC')::date AS sale_date,
+    COALESCE(SUM(final_amount), 0) AS total_revenue,
+    COUNT(id) AS total_transactions
+FROM 
+    public.sales
+WHERE 
+    status = 'completed'
+GROUP BY 
+    business_id, 
+    (created_at AT TIME ZONE 'UTC')::date;
+
+-- View üçün PostgREST icazələri
+GRANT SELECT ON public.daily_sales_stats TO authenticated, anon, service_role;
+
+-- ==========================================
+-- TRIGGERS: Avtomatik yenilənmə vaxtının yazılması (updated_at)
+-- ==========================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = NOW();
+   RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_customers_updated_at ON public.customers;
+CREATE TRIGGER update_customers_updated_at 
+    BEFORE UPDATE ON public.customers
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
