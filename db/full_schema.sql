@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     barcode TEXT,
+    buy_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     sell_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     stock_quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
     min_stock_threshold DECIMAL(12,2) DEFAULT 0,
