@@ -37,6 +37,22 @@ Deno.serve(async (req: Request) => {
 
     const groqApiKey = await getSecret('GROQ_API_KEY');
 
+    // Fetch user profile to get their name
+    let userName = "";
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name')
+        .eq('id', businessId)
+        .single();
+      if (profile && profile.first_name) {
+        userName = profile.first_name.trim();
+      }
+    } catch (e) {
+      console.error("Profile fetch error:", e);
+    }
+    const greetingName = userName ? `${userName} bəy` : 'Müəllim';
+
     // --- Action: ask_assistant / chat ---
     if (action === 'ask_assistant' || action === 'chat') {
        // Step 1: Determine if SQL is needed
@@ -64,7 +80,8 @@ Vacib Qaydalar:
   { "sql_query": "SELECT ... WHERE business_id = '${businessId}' ..." }
 - SQL sorğusunda mütləq WHERE süzgəcində business_id = '${businessId}' istifadə et.
 - Əgər sualda verilənlər artıq mövcuddursa (məsələn, hesabat analizi zamanı bütün satış və xərc rəqəmləri sualın özündə verilibsə) və ya sual sadə söhbətdirsə, birbaşa geniş cavab yaz və bu JSON formatında qaytar:
-  { "answer": "Müəllim, ... [bütün cavab və ya analiz]" }`;
+  { "answer": "..." }
+- Cavab verərkən Azərbaycan dilində, çox səmimi, professional və bəzən "${greetingName}" (və ya bəzən "Müəllim") deyə müraciət et. Amma hər cümlədə xitabı təkrarlama, çox təbii olsun (maksimum 1-2 dəfə xitab et, hər cümlədə təkrarlama).`;
 
        const groqRes1 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
            method: 'POST',
@@ -111,14 +128,17 @@ Vacib Qaydalar:
        // Step 2: Final response generation (yalnız SQL icra olunanda işləyir)
        const systemPrompt2 = `Sən Siam AI layihəsinin ağıllı idarəetmə köməkçisisən.
 İstifadəçinin sualına cavab verirsən. Sənə verilənlər bazasından çəkilmiş məlumatlar (əgər varsa) təqdim olunacaq.
-Məlumatlara əsaslanaraq istifadəçinin sualını Azərbaycan dilində, çox səmimi, professional və "Müəllim" deyə müraciət edərək cavabla.
+Məlumatlara əsaslanaraq istifadəçinin sualını Azərbaycan dilində, çox səmimi, professional və bəzən "${greetingName}" (və ya bəzən "Müəllim") deyə müraciət edərək cavabla.
+
+Vacib Qayda:
+- Hər cümlədə xitab etmə (təkrarlama). Müraciət sözünü (məsələn, "${greetingName}") yalnız söhbətin əvvəlində və ya uyğun yerdə cəmi 1-2 dəfə istifadə et, hər cümlədə təkrarlama ki, söhbət təbii alınsın.
 
 İstifadəçinin sualı: ${text}
 İcra olunan SQL sorğusu: ${executedQuery || 'Yoxdur'}
 Sorğu nəticəsi (Data): ${JSON.stringify(queryResult || 'Məlumat yoxdur')}
 
 Cavabı JSON formatında qaytar:
-{ "answer": "Müəllim, ... [cavab]" }`;
+{ "answer": "..." }`;
 
        const groqRes2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
            method: 'POST',
