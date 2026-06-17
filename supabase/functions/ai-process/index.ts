@@ -33,9 +33,49 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { action, text, businessId, chatHistory, entryType, imagesBase64, imageBase64 } = body;
+    const { action, text, businessId, chatHistory, entryType, imagesBase64, imageBase64, audioBase64 } = body;
 
     const groqApiKey = await getSecret('GROQ_API_KEY');
+
+    // --- Action: transcribe_audio (Whisper Speech-to-Text) ---
+    if (action === 'transcribe_audio') {
+       if (!audioBase64) {
+           throw new Error('Audio məlumatı tapılmadı');
+       }
+
+       // Convert base64 back to Uint8Array
+       const binaryString = atob(audioBase64);
+       const len = binaryString.length;
+       const bytes = new Uint8Array(len);
+       for (let i = 0; i < len; i++) {
+           bytes[i] = binaryString.charCodeAt(i);
+       }
+       
+       const fileBlob = new Blob([bytes], { type: 'audio/webm' });
+       
+       const formData = new FormData();
+       formData.append('file', fileBlob, 'audio.webm');
+       formData.append('model', 'whisper-large-v3');
+       formData.append('language', 'az');
+
+       const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+           method: 'POST',
+           headers: {
+               'Authorization': 'Bearer ' + groqApiKey
+           },
+           body: formData
+       });
+
+       if (!whisperRes.ok) {
+           const errText = await whisperRes.text();
+           throw new Error(`Whisper API Error: ${errText}`);
+       }
+
+       const whisperData = await whisperRes.json();
+       return new Response(JSON.stringify({ text: whisperData.text }), {
+           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+       });
+    }
 
     // Fetch user profile to get their name
     let userName = "";
@@ -67,16 +107,18 @@ Qaydalar və Mümkün Cavab Formatları:
    (Verilənlər bazası sxemi: public.profiles, public.categories, public.products, public.sales, public.sale_items, public.expenses, public.customers, public.payables)
 
 2. Əgər istifadəçi verilənlər yazmaq/dəyişmək (borc əlavə etmək, borc silmək, ödəniş etmək və s.) istəyirsə, uyğun 'write_action' obyektini qaytar:
-   - Müştəriyə borc yazmaq ("Rəvana 500 AZN borc yaz, 25-i qaytaracaq"):
-     { "write_action": { "action": "add_customer_debt", "customer_name": "Müştəri adı", "amount": 500, "due_date": "YYYY-MM-DD", "notes": "Qeyd" } }
-   - Müştərinin borcunu ödəmək/silmək ("Əlinin borcunu sil/öndəndi"):
-     { "write_action": { "action": "pay_customer_debt", "customer_name": "Müştəri adı", "amount": null, "notes": "AI tərəfindən silindi" } }
-     (Qeyd: 'amount' verilərsə o qədər, null verilərsə müştərinin bütün borcu ödənilir/silinir)
-   - Mənim başqasına olan borcumu əlavə etmək ("Orxana 200 AZN verəcək borcum var"):
-     { "write_action": { "action": "add_payable", "creditor_name": "Şəxsin adı", "amount": 200, "due_date": "YYYY-MM-DD", "description": "Təsvir" } }
-   - Mənim başqasına olan borcumun ödənilməsi ("Orxana olan borcumu verdim/sildim"):
-     { "write_action": { "action": "pay_payable", "creditor_name": "Şəxsin adı", "amount": null } }
-     (Qeyd: 'amount' null olarsa, həmin şəxsə olan bütün borcumuz ödənilir)
+    - Müştəriyə borc yazmaq ("Rəvana 500 AZN borc yaz", "Orxan adlı dostuma 200 manat borc yaz", "Əlinin alacağına 100 yaz", "X-dən alacağım var", "X-ə borc verdim"):
+      DİQQƏT: Bu əməliyyat alacaqlar/müştəri borcları (Customer Debt) üçündür. İstifadəçi başqasına pul veribsə, dostuna/müştəriyə borc yazırsa, yaxud kiminsə ona borcu yaranıbsa ("borc yaz", "borc verdim", "alacağım var" ifadələri) bu action-dan istifadə olunur:
+      { "write_action": { "action": "add_customer_debt", "customer_name": "Müştəri adı", "amount": 500, "due_date": "YYYY-MM-DD", "notes": "Qeyd" } }
+    - Müştərinin borcunu ödəmək/silmək ("Əlinin borcunu sil/öndəndi"):
+      { "write_action": { "action": "pay_customer_debt", "customer_name": "Müştəri adı", "amount": null, "notes": "AI tərəfindən silindi" } }
+      (Qeyd: 'amount' verilərsə o qədər, null verilərsə müştərinin bütün borcu ödənilir/silinir)
+    - Mənim başqasına olan borcumu əlavə etmək ("Orxana 200 AZN verəcək borcum var", "Orxana borcum var", "Orxandan borc aldım", "verəcəyim var"):
+      DİQQƏT: Bu əməliyyat verəcəklər (Payables) üçündür. İstifadəçi özü kiməsə borcludursa ("borcum var", "verəcəyim var", "borc aldım" ifadələri) bu action-dan istifadə olunur:
+      { "write_action": { "action": "add_payable", "creditor_name": "Şəxsin adı", "amount": 200, "due_date": "YYYY-MM-DD", "description": "Təsvir" } }
+    - Mənim başqasına olan borcumun ödənilməsi ("Orxana olan borcumu verdim/sildim"):
+      { "write_action": { "action": "pay_payable", "creditor_name": "Şəxsin adı", "amount": null } }
+      (Qeyd: 'amount' null olarsa, həmin şəxsə olan bütün borcumuz ödənilir)
 
 3. Əgər sualda rəqəmlər artıq hazır verilibsə və ya sual sadə söhbətdirsə, birbaşa cavab yaz:
    { "answer": "..." }
