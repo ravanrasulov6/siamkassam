@@ -62,6 +62,7 @@ export default function ReportsPage() {
     const [activeTab, setActiveTab] = useState('general');
     const [loading, setLoading] = useState(false);
     const [auditLoading, setAuditLoading] = useState(false);
+    const [auditWarning, setAuditWarning] = useState(null);
     const [error, setError] = useState(null);
 
     const [dateRange, setDateRange] = useState(() => {
@@ -132,27 +133,53 @@ export default function ReportsPage() {
         } finally { setLoading(false); }
     }
 
-    async function handleAiAudit() {
+    async function handleAiAudit(force = false) {
         if (!business) return;
         try {
             setAuditLoading(true);
-            showSuccess('Aİ analizi başladı, bitəndə "Məktublarım" bölməsinə düşəcək...');
+            setAuditWarning(null);
 
-            // Gather all relevant data for the prompt
-            const [salesRes, expRes, debtRes] = await Promise.all([
-                reportsService.getSalesPerformance(business.id, dateRange.start, dateRange.end),
-                reportsService.getExpensesAnalysis(business.id, dateRange.start, dateRange.end),
-                reportsService.getDebtAnalysis(business.id)
-            ]);
+            let salesRes, expRes, debtRes;
+            if (force && auditWarning?.data) {
+                salesRes = auditWarning.data.salesRes;
+                expRes = auditWarning.data.expRes;
+                debtRes = auditWarning.data.debtRes;
+            } else {
+                [salesRes, expRes, debtRes] = await Promise.all([
+                    reportsService.getSalesPerformance(business.id, dateRange.start, dateRange.end),
+                    reportsService.getExpensesAnalysis(business.id, dateRange.start, dateRange.end),
+                    reportsService.getDebtAnalysis(business.id)
+                ]);
+            }
+
+            // Check if 70%+ of the stats are zero/empty (3 out of 4 indicators are zero)
+            if (!force) {
+                let zeroCount = 0;
+                if (!salesRes.topProducts || salesRes.topProducts.length === 0) zeroCount++;
+                if (!salesRes.averageTicketSize || parseFloat(salesRes.averageTicketSize) === 0) zeroCount++;
+                if (!expRes.totalExpenses || parseFloat(expRes.totalExpenses) === 0) zeroCount++;
+                if (!debtRes.totalReceivable || parseFloat(debtRes.totalReceivable) === 0) zeroCount++;
+
+                if (zeroCount >= 3) {
+                    setAuditWarning({
+                        message: "Siz deyəsən sistemi aktiv olaraq işlətmirsiniz. Satış, xərc və ya borc məlumatları kifayət qədər deyil. Analiz etməyə ehtiyac olmaya bilər.",
+                        data: { salesRes, expRes, debtRes }
+                    });
+                    setAuditLoading(false);
+                    return;
+                }
+            }
+
+            showSuccess('Aİ analizi başladı, bitəndə "Məktublarım" bölməsinə düşəcək...');
 
             const prompt = `Sən Siam AI-ın Baş Biznes Auditorusan. Aşağıdakı dataya əsasən ən azı 30 cümlədən ibarət, olduqca dərin, detallı və peşəkar maliyyə analizi/audit məktubu yaz.
             Məktub rəsmi, ciddi və peşəkar maliyyə analizi dilində yazılmalı, süni zəka şablonlarından uzaq, real biznes auditorunun dilindən səslənməlidir.
             İstifadəçiyə yalnız söhbətin əvvəlində nəzakətlə müraciət et (məsələn, "Rəvan bəy" və ya əgər ad yoxdursa "Müəllim"), hər cümlədə və ya paraqrafda bu xitabı təkrarlama.
             Məktubu "answer" sahəsində qaytar.
             Data:
-            Satışlar: Top məhsullar ${salesRes.topProducts.map(p => p.name).join(', ')}, Orta satış ₼${salesRes.averageTicketSize}.
-            Xərclər: Cəmi ₼${expRes.totalExpenses}.
-            Borclar: Cəmi debitor borcu ₼${debtRes.totalReceivable}, Riskli borcların sayı ${debtRes.highRiskDebtorsCount}.
+            Satışlar: Top məhsullar ${salesRes.topProducts.map(p => p.name).join(', ') || 'Məhsul yoxdur'}, Orta satış ₼${salesRes.averageTicketSize || 0}.
+            Xərclər: Cəmi ₼${expRes.totalExpenses || 0}.
+            Borclar: Cəmi debitor borcu ₼${debtRes.totalReceivable || 0}, Riskli borcların sayı ${debtRes.highRiskDebtorsCount || 0}.
             Məktub sahibkar üçün fərdi, həm tənqidi həm də yol göstərən bir tonla, rəqəmsal transformasiyanın əhəmiyyətini vurğulayaraq yazılmalıdır.`;
 
             const aiResponse = await aiService.askAssistant(prompt, business.id);
@@ -239,7 +266,7 @@ export default function ReportsPage() {
                             <button
                                 className="btn btn-primary"
                                 style={{ marginTop: '24px', width: '100%', gap: '8px' }}
-                                onClick={handleAiAudit}
+                                onClick={() => handleAiAudit(false)}
                                 disabled={auditLoading}
                             >
                                 {auditLoading ? <div className="spinner spinner-sm"></div> : 'Analiz et'}
@@ -385,6 +412,52 @@ export default function ReportsPage() {
                 </div>
             )}
 
+            {auditWarning && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(12px)',
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999,
+                    animation: 'fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}>
+                    <div className="glass-card animate-fade-in" style={{
+                        padding: '40px 32px', maxWidth: '480px', width: '90%', textAlign: 'center',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(15, 23, 42, 0.98))',
+                        boxShadow: '0 24px 50px -12px rgba(0, 0, 0, 0.6)',
+                        borderRadius: '24px'
+                    }}>
+                        <div style={{ 
+                            display: 'inline-flex', padding: '16px', 
+                            background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', 
+                            borderRadius: '50%', marginBottom: '20px',
+                            boxShadow: '0 0 20px rgba(245, 158, 11, 0.15)'
+                        }}>
+                            <AlertCircle size={36} />
+                        </div>
+                        <h3 style={{ color: '#f59e0b', marginBottom: '12px', fontSize: '22px', fontWeight: '700', letterSpacing: '-0.025em' }}>Kifayət qədər data yoxdur</h3>
+                        <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: '28px', opacity: 0.9 }}>
+                            {auditWarning.message}
+                        </p>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                            <button className="btn btn-animate" style={{ 
+                                background: '#f59e0b', color: 'white', border: 'none', 
+                                padding: '12px 24px', borderRadius: '12px', fontWeight: '600', 
+                                cursor: 'pointer', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)' 
+                            }} onClick={() => handleAiAudit(true)}>
+                                Əminəm, analiz et
+                            </button>
+                            <button className="btn btn-ghost" style={{ 
+                                padding: '12px 24px', borderRadius: '12px', 
+                                border: '1px solid var(--color-border)', cursor: 'pointer',
+                                color: 'var(--color-text-primary)'
+                            }} onClick={() => setAuditWarning(null)}>
+                                Ləğv et
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {loading ? <ReportSkeleton /> : (
                 <>
                     {activeTab === 'general' && reportData && (
@@ -425,7 +498,7 @@ export default function ReportsPage() {
                                         <button
                                             className="btn btn-primary"
                                             style={{ width: '100%', borderRadius: '12px' }}
-                                            onClick={handleAiAudit}
+                                            onClick={() => handleAiAudit(false)}
                                             disabled={auditLoading}
                                         >
                                             {auditLoading ? <div className="spinner spinner-sm"></div> : 'Analiz et'}
