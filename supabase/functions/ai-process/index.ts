@@ -55,33 +55,33 @@ Deno.serve(async (req: Request) => {
 
     // --- Action: ask_assistant / chat ---
     if (action === 'ask_assistant' || action === 'chat') {
-       // Step 1: Determine if SQL is needed
+       // Step 1: Determine if SQL or Write Action is needed
        const systemPrompt1 = `Sən Siam AI layihəsinin ağıllı idarəetmə köməkçisisən.
-İstifadəçinin sualına cavab vermək üçün məlumat bazasından (PostgreSQL) SELECT sorğusu ilə məlumat oxumağa ehtiyac olub-olmadığını müəyyən et.
-Sənə istifadəçinin 'business_id' dəyəri veriləcək: "${businessId}".
+İstifadəçinin sualına və ya əmrinə cavab vermək üçün bazadan məlumat oxumağa (SELECT) və ya məlumat yazmağa (INSERT/UPDATE) ehtiyac olub-olmadığını müəyyən et.
+İstifadəçinin 'business_id' dəyəri: "${businessId}".
 
-Verilənlər bazası sxemi (Hər sorğuda mütləq business_id = '${businessId}' filteri istifadə edilməlidir!):
-1. public.profiles: id UUID (business_id), biz_name TEXT, biz_currency TEXT
-2. public.categories: id UUID, business_id UUID, name TEXT
-3. public.products: id UUID, business_id UUID, category_id UUID, name TEXT, barcode TEXT, buy_price DECIMAL, sell_price DECIMAL, stock_quantity DECIMAL, unit TEXT, is_active BOOLEAN
-4. public.sales: id UUID, business_id UUID, customer_id UUID, total_amount DECIMAL, discount_amount DECIMAL, final_amount DECIMAL, payment_method TEXT, created_at TIMESTAMP
-5. public.sale_items: id UUID, sale_id UUID, product_id UUID, product_name TEXT, quantity DECIMAL, unit_price DECIMAL, subtotal DECIMAL
-6. public.expenses: id UUID, business_id UUID, title TEXT, amount DECIMAL, expense_date DATE, category TEXT
-7. public.customers: id UUID, business_id UUID, first_name TEXT, last_name TEXT, phone TEXT, total_debt DECIMAL
-8. public.payables: id UUID, business_id UUID, creditor_name TEXT, amount DECIMAL, paid_amount DECIMAL, status TEXT ('active' və ya 'completed')
+Qaydalar və Mümkün Cavab Formatları:
 
-Məsələn:
-- "Neçə məhsulum var?" -> SELECT count(*) as product_count FROM public.products WHERE business_id = '${businessId}' AND is_active = true
-- "Bu gün nə qədər satış etmişəm?" -> SELECT sum(final_amount) as total_sales FROM public.sales WHERE business_id = '${businessId}' AND created_at::date = current_date
-- "Ümumi nə qədər borc var?" -> SELECT sum(total_debt) as total_debt FROM public.customers WHERE business_id = '${businessId}'
+1. Əgər istifadəçi məlumat oxumaq (statistika, siyahı, suallar) istəyirsə, SQL SELECT sorğusu qaytar:
+   { "sql_query": "SELECT ... WHERE business_id = '${businessId}' ..." }
+   (Verilənlər bazası sxemi: public.profiles, public.categories, public.products, public.sales, public.sale_items, public.expenses, public.customers, public.payables)
 
-Vacib Qaydalar:
-- Əgər sual verilənlər bazasından hər hansı məlumat və ya statistika tələb edirsə və verilən mətndə (sualda) bu məlumatlar yoxdursa, cavab olaraq YALNIZ aşağıdakı JSON formatında SQL sorğusu qaytar (əlavə heç bir mətn yazma):
-  { "sql_query": "SELECT ... WHERE business_id = '${businessId}' ..." }
-- SQL sorğusunda mütləq WHERE süzgəcində business_id = '${businessId}' istifadə et.
-- Əgər sualda verilənlər artıq mövcuddursa (məsələn, hesabat analizi zamanı bütün satış və xərc rəqəmləri sualın özündə verilibsə) və ya sual sadə söhbətdirsə, birbaşa geniş cavab yaz və bu JSON formatında qaytar:
-  { "answer": "..." }
-- Cavab verərkən Azərbaycan dilində, çox səmimi, professional və bəzən "${greetingName}" (və ya bəzən "Müəllim") deyə müraciət et. Amma hər cümlədə xitabı təkrarlama, çox təbii olsun (maksimum 1-2 dəfə xitab et, hər cümlədə təkrarlama).`;
+2. Əgər istifadəçi verilənlər yazmaq/dəyişmək (borc əlavə etmək, borc silmək, ödəniş etmək və s.) istəyirsə, uyğun 'write_action' obyektini qaytar:
+   - Müştəriyə borc yazmaq ("Rəvana 500 AZN borc yaz, 25-i qaytaracaq"):
+     { "write_action": { "action": "add_customer_debt", "customer_name": "Müştəri adı", "amount": 500, "due_date": "YYYY-MM-DD", "notes": "Qeyd" } }
+   - Müştərinin borcunu ödəmək/silmək ("Əlinin borcunu sil/öndəndi"):
+     { "write_action": { "action": "pay_customer_debt", "customer_name": "Müştəri adı", "amount": null, "notes": "AI tərəfindən silindi" } }
+     (Qeyd: 'amount' verilərsə o qədər, null verilərsə müştərinin bütün borcu ödənilir/silinir)
+   - Mənim başqasına olan borcumu əlavə etmək ("Orxana 200 AZN verəcək borcum var"):
+     { "write_action": { "action": "add_payable", "creditor_name": "Şəxsin adı", "amount": 200, "due_date": "YYYY-MM-DD", "description": "Təsvir" } }
+   - Mənim başqasına olan borcumun ödənilməsi ("Orxana olan borcumu verdim/sildim"):
+     { "write_action": { "action": "pay_payable", "creditor_name": "Şəxsin adı", "amount": null } }
+     (Qeyd: 'amount' null olarsa, həmin şəxsə olan bütün borcumuz ödənilir)
+
+3. Əgər sualda rəqəmlər artıq hazır verilibsə və ya sual sadə söhbətdirsə, birbaşa cavab yaz:
+   { "answer": "..." }
+
+Həmişə YALNIZ tələb olunan JSON formatında cavab ver, əlavə heç bir mətn yazma.`;
 
        const groqRes1 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
            method: 'POST',
@@ -101,7 +101,7 @@ Vacib Qaydalar:
        const data1 = await groqRes1.json();
        const parsed1 = JSON.parse(data1.choices[0].message.content);
 
-       // EGER model birinci addımda birbaşa cavab veribsə (SQL-ə ehtiyac yoxdursa), dərhal qaytarırıq!
+       // Eger model birbaşa cavab veribsə, dərhal qaytar
        if (parsed1.answer) {
            return new Response(JSON.stringify({ answer: parsed1.answer }), {
              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -111,6 +111,7 @@ Vacib Qaydalar:
        let queryResult = null;
        let executedQuery = null;
 
+       // 1. SELECT SQL sorğusu varsa
        if (parsed1.sql_query) {
            executedQuery = parsed1.sql_query;
            const { data: rpcData, error: rpcError } = await supabase.rpc('execute_business_query', {
@@ -125,17 +126,48 @@ Vacib Qaydalar:
            }
        }
 
-       // Step 2: Final response generation (yalnız SQL icra olunanda işləyir)
+       // 2. Yazmaq (Mutation) action-ı varsa
+       if (parsed1.write_action) {
+           const { action: subAction, customer_name, creditor_name, amount, due_date, notes, description } = parsed1.write_action;
+           let rpcName = "";
+           let params = {};
+           executedQuery = `Mutation: ${subAction}`;
+           
+           if (subAction === 'add_customer_debt') {
+               rpcName = 'ai_add_customer_debt';
+               params = { p_business_id: businessId, p_customer_name: customer_name, p_amount: amount, p_due_date: due_date ? due_date : null, p_notes: notes };
+           } else if (subAction === 'pay_customer_debt') {
+               rpcName = 'ai_pay_customer_debt';
+               params = { p_business_id: businessId, p_customer_name: customer_name, p_amount: amount ? amount : null, p_notes: notes };
+           } else if (subAction === 'add_payable') {
+               rpcName = 'ai_add_payable';
+               params = { p_business_id: businessId, p_creditor_name: creditor_name, p_amount: amount, p_due_date: due_date ? due_date : null, p_description: description };
+           } else if (subAction === 'pay_payable') {
+               rpcName = 'ai_pay_payable';
+               params = { p_business_id: businessId, p_creditor_name: creditor_name, p_amount: amount ? amount : null };
+           }
+           
+           if (rpcName) {
+               const { data: rpcData, error: rpcError } = await supabase.rpc(rpcName, params);
+               if (rpcError) {
+                   queryResult = { error: rpcError.message };
+               } else {
+                   queryResult = rpcData;
+               }
+           }
+       }
+
+       // Step 2: Final response generation
        const systemPrompt2 = `Sən Siam AI layihəsinin ağıllı idarəetmə köməkçisisən.
-İstifadəçinin sualına cavab verirsən. Sənə verilənlər bazasından çəkilmiş məlumatlar (əgər varsa) təqdim olunacaq.
-Məlumatlara əsaslanaraq istifadəçinin sualını Azərbaycan dilində, çox səmimi, professional və bəzən "${greetingName}" (və ya bəzən "Müəllim") deyə müraciət edərək cavabla.
+Məlumatlara əsaslanaraq istifadəçinin sualını və ya əmrinin yerinə yetirilmə nəticəsini Azərbaycan dilində, çox səmimi, professional və bəzən "${greetingName}" (və ya bəzən "Müəllim") deyə müraciət edərək cavabla.
 
-Vacib Qayda:
-- Hər cümlədə xitab etmə (təkrarlama). Müraciət sözünü (məsələn, "${greetingName}") yalnız söhbətin əvvəlində və ya uyğun yerdə cəmi 1-2 dəfə istifadə et, hər cümlədə təkrarlama ki, söhbət təbii alınsın.
+Vacib Qaydalar:
+- Hər cümlədə xitab etmə (təkrarlama). Müraciət sözünü yalnız 1-2 dəfə istifadə et.
+- Əgər bir borc əlavə edilibsə və ya silinibbə, uğurlu şəkildə edildiyini təsdiqlə və yeni qalıq balansını qeyd et.
 
-İstifadəçinin sualı: ${text}
-İcra olunan SQL sorğusu: ${executedQuery || 'Yoxdur'}
-Sorğu nəticəsi (Data): ${JSON.stringify(queryResult || 'Məlumat yoxdur')}
+İstifadəçinin sualı/əmri: ${text}
+İcra olunan əməliyyat: ${executedQuery || 'Yoxdur'}
+Nəticə (Data): ${JSON.stringify(queryResult || 'Məlumat yoxdur')}
 
 Cavabı JSON formatında qaytar:
 { "answer": "..." }`;
