@@ -38,9 +38,116 @@ export default function AIHubPage() {
     const [paymentAmount, setPaymentAmount] = useState('');
     const chatEndRef = useRef(null);
 
+    // Chat Sessions States
+    const [sessions, setSessions] = useState([]);
+    const [activeSessionId, setActiveSessionId] = useState(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
     useEffect(() => {
         loadPendingEntries();
+        
+        // Load sessions from localStorage
+        const stored = localStorage.getItem('siam_ai_chat_sessions');
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                if (parsed && parsed.length > 0) {
+                    setSessions(parsed);
+                    setActiveSessionId(parsed[0].id);
+                    setChatMessages(parsed[0].messages);
+                    return;
+                }
+            } catch (e) {
+                console.error("Error loading chat sessions:", e);
+            }
+        }
+        
+        // Default session if empty
+        const defaultSession = {
+            id: 'session_' + Date.now(),
+            title: 'Yeni Söhbət',
+            messages: [{ role: 'ai', text: 'Salam! Sistemdə nə etmək istəyirsiniz? Faktura şəkli yükləyə, xərc yaza və ya biznesinizlə bağlı sual verə bilərsiz. 😊' }],
+            created_at: new Date().toISOString()
+        };
+        setSessions([defaultSession]);
+        setActiveSessionId(defaultSession.id);
+        setChatMessages(defaultSession.messages);
     }, []);
+
+    const updateActiveSessionMessages = (msgOrFn) => {
+        let newMessages;
+        if (typeof msgOrFn === 'function') {
+            newMessages = msgOrFn(chatMessages);
+        } else {
+            newMessages = msgOrFn;
+        }
+
+        setChatMessages(newMessages);
+        setSessions(prev => {
+            const updated = prev.map(s => {
+                if (s.id === activeSessionId) {
+                    let title = s.title;
+                    if (title === 'Yeni Söhbət' || title === 'Söhbət') {
+                        const firstUserMsg = newMessages.find(m => m.role === 'user');
+                        if (firstUserMsg) {
+                            title = firstUserMsg.text.substring(0, 24) + (firstUserMsg.text.length > 24 ? '...' : '');
+                        }
+                    }
+                    return {
+                        ...s,
+                        title,
+                        messages: newMessages
+                    };
+                }
+                return s;
+            });
+            localStorage.setItem('siam_ai_chat_sessions', JSON.stringify(updated));
+            return updated;
+        });
+    };
+
+    const createNewSession = () => {
+        const newSession = {
+            id: 'session_' + Date.now(),
+            title: 'Yeni Söhbət',
+            messages: [{ role: 'ai', text: 'Salam! Sualınızı verə bilərsiniz. 😊' }],
+            created_at: new Date().toISOString()
+        };
+        const updatedSessions = [newSession, ...sessions];
+        setSessions(updatedSessions);
+        setActiveSessionId(newSession.id);
+        setChatMessages(newSession.messages);
+        localStorage.setItem('siam_ai_chat_sessions', JSON.stringify(updatedSessions));
+        showSuccess('Yeni söhbət yaradıldı');
+    };
+
+    const deleteSession = (e, sessionId) => {
+        e.stopPropagation();
+        if (sessions.length <= 1) {
+            showError('Ən azı bir söhbət seansı qalmalıdır.');
+            return;
+        }
+        
+        const updatedSessions = sessions.filter(s => s.id !== sessionId);
+        setSessions(updatedSessions);
+        localStorage.setItem('siam_ai_chat_sessions', JSON.stringify(updatedSessions));
+        
+        if (activeSessionId === sessionId) {
+            const nextSession = updatedSessions[0];
+            setActiveSessionId(nextSession.id);
+            setChatMessages(nextSession.messages);
+        }
+        showSuccess('Söhbət silindi');
+    };
+
+    const selectSession = (sessionId) => {
+        const session = sessions.find(s => s.id === sessionId);
+        if (session) {
+            setActiveSessionId(sessionId);
+            setChatMessages(session.messages);
+            setIsSidebarOpen(false);
+        }
+    };
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -162,7 +269,7 @@ export default function AIHubPage() {
         // Setup visual previews and add to chat
         const previews = files.map(f => URL.createObjectURL(f));
         setSelectedImages(previews);
-        setChatMessages(prev => [...prev, { role: 'user', text: `[${files.length} ədəd şəkil yükləndi]` }]);
+        updateActiveSessionMessages(prev => [...prev, { role: 'user', text: `[${files.length} ədəd şəkil yükləndi]` }]);
 
         try {
             const base64s = await Promise.all(files.map(f => resizeImage(f)));
@@ -271,7 +378,7 @@ export default function AIHubPage() {
         if (!chatInput.trim()) return;
 
         const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
-        setChatMessages(newMessages);
+        updateActiveSessionMessages(newMessages);
         setChatInput('');
         setChatLoading(true);
 
@@ -279,14 +386,14 @@ export default function AIHubPage() {
             const res = await aiService.askAssistant(chatInput, business.id, newMessages);
             const { answer, actionPerformed, intent, payment_target, data } = res;
 
-            setChatMessages([...newMessages, { role: 'ai', text: answer }]);
+            updateActiveSessionMessages([...newMessages, { role: 'ai', text: answer }]);
 
             if (intent === 'payment' && payment_target) {
                 // If AI provides an amount, we use it to pre-fill
                 const prefilledAmount = data?.amount || '';
                 const found = await findAndOpenPayment(payment_target, prefilledAmount);
                 if (!found) {
-                    setChatMessages(prev => [...prev, { role: 'ai', text: `Müəllim, '${payment_target}' adında aktiv borc və ya xərc şablonu tapmadım.` }]);
+                    updateActiveSessionMessages(prev => [...prev, { role: 'ai', text: `Müəllim, '${payment_target}' adında aktiv borc və ya xərc şablonu tapmadım.` }]);
                 }
             } else if (actionPerformed) {
                 // Auto-open modal after action
@@ -294,7 +401,7 @@ export default function AIHubPage() {
                 setTimeout(() => setIsPendingModalOpen(true), 500);
             }
         } catch (err) {
-            setChatMessages([...newMessages, { role: 'ai', text: "Üzr istəyirəm, xəta baş verdi: " + err.message }]);
+            updateActiveSessionMessages([...newMessages, { role: 'ai', text: "Üzr istəyirəm, xəta baş verdi: " + err.message }]);
         } finally {
             setChatLoading(false);
         }
@@ -448,7 +555,7 @@ export default function AIHubPage() {
             }
 
             setPaymentModal(null);
-            setChatMessages(prev => [...prev, { role: 'ai', text: `Uğurla ${amountToPay} AZN ödəniş edildi. Yeni qalıq: ${(Number(paymentModal.total) - amountToPay).toFixed(2)} AZN. Başqa nə edə bilərəm?` }]);
+            updateActiveSessionMessages(prev => [...prev, { role: 'ai', text: `Uğurla ${amountToPay} AZN ödəniş edildi. Yeni qalıq: ${(Number(paymentModal.total) - amountToPay).toFixed(2)} AZN. Başqa nə edə bilərəm?` }]);
         } catch (err) {
             showError('Ödəniş xətası: ' + err.message);
         } finally {
@@ -638,42 +745,167 @@ export default function AIHubPage() {
                             </div>
                         </div>
                     </div>
-
-                    <button
-                        className="btn-animate"
-                        onClick={() => {
-                            if (window.confirm('Çat tarixçəsini təmizləmək istəyirsiniz?')) {
-                                setChatMessages([{ role: 'ai', text: 'Salam! Sualınızı verə bilərsiniz. 😊' }]);
-                            }
-                        }}
-                        style={{
-                            background: 'white',
-                            border: '1px solid var(--color-border-light)',
-                            color: 'var(--color-text-secondary)',
-                            padding: '12px',
-                            borderRadius: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
-                        }}
-                        title="Çatı Təmizlə"
-                    >
-                        <Trash2 size={20} />
-                    </button>
                 </div>
             </div>
 
             <style>{`
-                .unified-chat-container {
+                .chat-workspace {
+                    display: flex;
+                    gap: 24px;
+                    height: calc(100vh - 220px);
+                    min-height: 500px;
+                    position: relative;
+                }
+
+                .chat-sidebar {
+                    width: 280px;
                     background: rgba(255, 255, 255, 0.7);
                     backdrop-filter: blur(20px);
                     border: 1px solid rgba(255, 255, 255, 0.4);
                     border-radius: 32px;
                     display: flex;
                     flex-direction: column;
-                    height: calc(100vh - 220px);
-                    min-height: 500px;
+                    box-shadow: 0 30px 60px -12px rgba(0,0,0,0.06);
+                    overflow: hidden;
+                    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                    flex-shrink: 0;
+                }
+
+                .sidebar-header {
+                    padding: 24px;
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+                }
+
+                .new-chat-btn {
+                    width: 100%;
+                    background: linear-gradient(135deg, #6366f1, #4f46e5);
+                    color: white;
+                    border: none;
+                    padding: 14px;
+                    border-radius: 18px;
+                    font-weight: 600;
+                    font-size: 14px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.3);
+                    transition: all 0.2s;
+                }
+
+                .new-chat-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 15px 25px -5px rgba(99, 102, 241, 0.4);
+                }
+
+                .sidebar-sessions-list {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+
+                .session-tab-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 12px 16px;
+                    border-radius: 16px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: 1px solid transparent;
+                    position: relative;
+                    color: var(--color-text-secondary);
+                }
+
+                .session-tab-item:hover {
+                    background: rgba(99, 102, 241, 0.05);
+                    color: #6366f1;
+                }
+
+                .session-tab-item.active {
+                    background: white;
+                    border-color: rgba(99, 102, 241, 0.15);
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+                    color: #6366f1;
+                    font-weight: 600;
+                }
+
+                .session-icon {
+                    opacity: 0.7;
+                    flex-shrink: 0;
+                }
+
+                .session-title {
+                    font-size: 13.5px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    flex: 1;
+                }
+
+                .session-delete-btn {
+                    border: none;
+                    background: transparent;
+                    color: #94a3b8;
+                    cursor: pointer;
+                    padding: 4px;
+                    border-radius: 6px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0;
+                    transition: all 0.2s;
+                }
+
+                .session-tab-item:hover .session-delete-btn {
+                    opacity: 1;
+                }
+
+                .session-delete-btn:hover {
+                    background: rgba(239, 68, 68, 0.1);
+                    color: #ef4444;
+                }
+
+                .sidebar-backdrop {
+                    display: none;
+                }
+
+                .chat-area-header {
+                    padding: 16px 24px;
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    background: rgba(255, 255, 255, 0.5);
+                }
+
+                .mobile-sidebar-toggle {
+                    display: none;
+                    background: var(--color-bg-elevated);
+                    border: 1px solid var(--color-border-light);
+                    color: var(--color-text-secondary);
+                    padding: 8px 16px;
+                    border-radius: 12px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    font-size: 13px;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .unified-chat-container {
+                    background: rgba(255, 255, 255, 0.75);
+                    backdrop-filter: blur(20px);
+                    border: 1px solid rgba(255, 255, 255, 0.4);
+                    border-radius: 32px;
+                    display: flex;
+                    flex-direction: column;
+                    flex: 1;
+                    height: 100%;
                     box-shadow: 0 30px 60px -12px rgba(0,0,0,0.08);
                     overflow: hidden;
                     position: relative;
@@ -808,82 +1040,162 @@ export default function AIHubPage() {
                     0%, 80%, 100% { transform: scale(0); }
                     40% { transform: scale(1); }
                 }
+
+                @media (max-width: 991px) {
+                    .chat-sidebar {
+                        position: fixed;
+                        top: 0;
+                        left: -320px;
+                        width: 280px;
+                        height: 100vh;
+                        border-radius: 0;
+                        z-index: 10000;
+                        box-shadow: 20px 0 40px rgba(0, 0, 0, 0.15);
+                    }
+                    
+                    .chat-sidebar.open {
+                        left: 0;
+                    }
+
+                    .sidebar-backdrop {
+                        display: block;
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(15, 23, 42, 0.4);
+                        backdrop-filter: blur(4px);
+                        z-index: 9999;
+                    }
+
+                    .mobile-sidebar-toggle {
+                        display: flex !important;
+                    }
+
+                    .unified-chat-container {
+                        border-radius: 24px;
+                    }
+
+                    .unified-input-bar {
+                        margin: 16px 20px 20px;
+                    }
+
+                    .chat-scroll-area {
+                        padding: 24px;
+                    }
+                }
             `}</style>
 
             <div className="animate-fade-in-up stagger-2">
-
-                <div className="unified-chat-container glass-card animate-fade-in-up stagger-2" style={{
-                    height: 'calc(100vh - 240px)',
-                    minHeight: '400px',
-                    borderRadius: 'var(--radius-2xl)',
-                    margin: '0 auto',
-                    width: '100%'
-                }}>
-                    <div className="chat-scroll-area">
-                        {chatMessages.map((msg, i) => (
-                            <div key={i} className={`chat-bubble ${msg.role === 'user' ? 'bubble-user' : 'bubble-ai'}`}
-                                style={{ padding: 'var(--space-4) var(--space-5)', borderRadius: 'var(--radius-lg)' }}>
-                                {msg.text}
-                            </div>
-                        ))}
-                        {(chatLoading || processingState) && (
-                            <div className="thinking-indicator">
-                                <div className="dot"></div>
-                                <div className="dot"></div>
-                                <div className="dot"></div>
-                                <span style={{ fontSize: '12px', marginLeft: '8px', color: '#94a3b8', fontWeight: '600' }}>
-                                    {processingState || 'SIAM düşünür...'}
-                                </span>
-                            </div>
-                        )}
-                        <div ref={chatEndRef} />
+                <div className="chat-workspace animate-fade-in-up stagger-2">
+                    
+                    {/* Chat Sessions Sidebar */}
+                    <div className={`chat-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+                        <div className="sidebar-header">
+                            <button className="new-chat-btn" onClick={createNewSession}>
+                                <Plus size={18} /> Yeni Söhbət
+                            </button>
+                        </div>
+                        <div className="sidebar-sessions-list">
+                            {sessions.map(s => (
+                                <div 
+                                    key={s.id} 
+                                    className={`session-tab-item ${s.id === activeSessionId ? 'active' : ''}`}
+                                    onClick={() => selectSession(s.id)}
+                                >
+                                    <MessageSquare size={16} className="session-icon" />
+                                    <span className="session-title">{s.title}</span>
+                                    <button className="session-delete-btn" onClick={(e) => deleteSession(e, s.id)}>
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
-                    <form onSubmit={handleChatSubmit} className="unified-input-bar">
-                        <label className="action-btn" title="Şəkil/Sənəd Yüklə">
-                            <UploadCloud size={22} />
-                            <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                capture="environment"
-                                onChange={handleFilesSelect}
-                                style={{ display: 'none' }}
+                    {/* Mobile Sidebar Backdrop */}
+                    {isSidebarOpen && (
+                        <div className="sidebar-backdrop" onClick={() => setIsSidebarOpen(false)} />
+                    )}
+
+                    {/* Main Chat Area */}
+                    <div className="unified-chat-container">
+                        
+                        {/* Header with toggle for mobile */}
+                        <div className="chat-area-header">
+                            <button className="mobile-sidebar-toggle" onClick={() => setIsSidebarOpen(true)}>
+                                <MessageSquare size={16} /> Tarixçə
+                            </button>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--color-text-primary)' }}>
+                                {sessions.find(s => s.id === activeSessionId)?.title || 'Söhbət'}
+                            </span>
+                            <div style={{ width: '40px' }} />
+                        </div>
+
+                        <div className="chat-scroll-area">
+                            {chatMessages.map((msg, i) => (
+                                <div key={i} className={`chat-bubble ${msg.role === 'user' ? 'bubble-user' : 'bubble-ai'}`}
+                                    style={{ padding: 'var(--space-4) var(--space-5)', borderRadius: 'var(--radius-lg)' }}>
+                                    {msg.text}
+                                </div>
+                            ))}
+                            {(chatLoading || processingState) && (
+                                <div className="thinking-indicator">
+                                    <div className="dot"></div>
+                                    <div className="dot"></div>
+                                    <div className="dot"></div>
+                                    <span style={{ fontSize: '12px', marginLeft: '8px', color: '#94a3b8', fontWeight: '600' }}>
+                                        {processingState || 'SIAM düşünür...'}
+                                    </span>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+
+                        <form onSubmit={handleChatSubmit} className="unified-input-bar">
+                            <label className="action-btn" title="Şəkil/Sənəd Yüklə">
+                                <UploadCloud size={22} />
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    capture="environment"
+                                    onChange={handleFilesSelect}
+                                    style={{ display: 'none' }}
+                                />
+                            </label>
+
+                            <button
+                                type="button"
+                                className={`action-btn ${isListening ? 'pulse-primary' : ''}`}
+                                onClick={startListening}
+                                title="Səsli Əmr"
+                            >
+                                <Mic size={22} color={isListening ? 'var(--color-danger)' : 'currentColor'} />
+                            </button>
+
+                            <textarea
+                                className="typing-area"
+                                placeholder="Əmrinizi bura yazın və ya sənəd yükləyin..."
+                                rows="1"
+                                value={chatInput}
+                                onChange={e => setChatInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleChatSubmit(e);
+                                    }
+                                }}
                             />
-                        </label>
 
-                        <button
-                            type="button"
-                            className={`action-btn ${isListening ? 'pulse-primary' : ''}`}
-                            onClick={startListening}
-                            title="Səsli Əmr"
-                        >
-                            <Mic size={22} color={isListening ? 'var(--color-danger)' : 'currentColor'} />
-                        </button>
-
-                        <textarea
-                            className="typing-area"
-                            placeholder="Əmrinizi bura yazın və ya sənəd yükləyin..."
-                            rows="1"
-                            value={chatInput}
-                            onChange={e => setChatInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleChatSubmit(e);
-                                }
-                            }}
-                        />
-
-                        <button
-                            type="submit"
-                            className="action-btn primary"
-                            disabled={chatLoading || !chatInput.trim()}
-                            title="Göndər"
-                        >
-                            <Send size={20} />
-                        </button>
-                    </form>
+                            <button
+                                type="submit"
+                                className="action-btn primary"
+                                disabled={chatLoading || !chatInput.trim()}
+                                title="Göndər"
+                            >
+                                <Send size={20} />
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
 
