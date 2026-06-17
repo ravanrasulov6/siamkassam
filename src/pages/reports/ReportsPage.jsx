@@ -146,7 +146,8 @@ export default function ReportsPage() {
             ]);
 
             const prompt = `Sən Siam AI-ın Baş Biznes Auditorusan. Aşağıdakı dataya əsasən ən azı 30 cümlədən ibarət, olduqca dərin, detallı və peşəkar maliyyə analizi/audit məktubu yaz.
-            Hər paraqrafda və ya müraciətdə hörmətlə "Müəllim" ifadəsini işlət. 
+            Məktub rəsmi, ciddi və peşəkar maliyyə analizi dilində yazılmalı, süni zəka şablonlarından uzaq, real biznes auditorunun dilindən səslənməlidir.
+            İstifadəçiyə yalnız söhbətin əvvəlində nəzakətlə müraciət et (məsələn, "Rəvan bəy" və ya əgər ad yoxdursa "Müəllim"), hər cümlədə və ya paraqrafda bu xitabı təkrarlama.
             Məktubu "answer" sahəsində qaytar.
             Data:
             Satışlar: Top məhsullar ${salesRes.topProducts.map(p => p.name).join(', ')}, Orta satış ₼${salesRes.averageTicketSize}.
