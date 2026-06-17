@@ -41,7 +41,23 @@ export default function AIHubPage() {
     // Chat Sessions States
     const [sessions, setSessions] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
+    const [editingSessionId, setEditingSessionId] = useState(null);
+    const [editingSessionTitle, setEditingSessionTitle] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    const handleRenameSession = (sessionId, newTitle) => {
+        if (!newTitle.trim()) return;
+        const updated = sessions.map(s => {
+            if (s.id === sessionId) {
+                return { ...s, title: newTitle.trim() };
+            }
+            return s;
+        });
+        setSessions(updated);
+        localStorage.setItem('siam_ai_chat_sessions', JSON.stringify(updated));
+        setEditingSessionId(null);
+        showSuccess('Söhbət adı yeniləndi');
+    };
 
     useEffect(() => {
         loadPendingEntries();
@@ -847,7 +863,15 @@ export default function AIHubPage() {
                     flex: 1;
                 }
 
-                .session-delete-btn {
+                .session-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    margin-left: auto;
+                }
+
+                .session-delete-btn,
+                .session-action-btn {
                     border: none;
                     background: transparent;
                     color: #94a3b8;
@@ -861,13 +885,32 @@ export default function AIHubPage() {
                     transition: all 0.2s;
                 }
 
-                .session-tab-item:hover .session-delete-btn {
+                .session-tab-item:hover .session-delete-btn,
+                .session-tab-item:hover .session-action-btn,
+                .session-action-btn.editing-active {
                     opacity: 1;
+                }
+
+                .session-action-btn:hover {
+                    background: rgba(99, 102, 241, 0.1);
+                    color: #6366f1;
                 }
 
                 .session-delete-btn:hover {
                     background: rgba(239, 68, 68, 0.1);
                     color: #ef4444;
+                }
+
+                .session-title-input {
+                    background: rgba(255, 255, 255, 0.9);
+                    border: 1px solid rgba(99, 102, 241, 0.4);
+                    border-radius: 8px;
+                    padding: 4px 8px;
+                    font-size: 13px;
+                    color: var(--color-text-primary);
+                    width: 100%;
+                    outline: none;
+                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
                 }
 
                 .sidebar-backdrop {
@@ -1102,10 +1145,53 @@ export default function AIHubPage() {
                                     onClick={() => selectSession(s.id)}
                                 >
                                     <MessageSquare size={16} className="session-icon" />
-                                    <span className="session-title">{s.title}</span>
-                                    <button className="session-delete-btn" onClick={(e) => deleteSession(e, s.id)}>
-                                        <Trash2 size={14} />
-                                    </button>
+                                    {editingSessionId === s.id ? (
+                                        <input
+                                            type="text"
+                                            className="session-title-input"
+                                            value={editingSessionTitle}
+                                            onChange={(e) => setEditingSessionTitle(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    handleRenameSession(s.id, editingSessionTitle);
+                                                } else if (e.key === 'Escape') {
+                                                    setEditingSessionId(null);
+                                                }
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <span className="session-title">{s.title}</span>
+                                    )}
+                                    
+                                    <div className="session-actions">
+                                        {editingSessionId === s.id ? (
+                                            <button 
+                                                className="session-action-btn editing-active" 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRenameSession(s.id, editingSessionTitle);
+                                                }}
+                                            >
+                                                <Check size={14} />
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                className="session-action-btn" 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingSessionId(s.id);
+                                                    setEditingSessionTitle(s.title);
+                                                }}
+                                            >
+                                                <Edit3 size={14} />
+                                            </button>
+                                        )}
+                                        <button className="session-delete-btn" onClick={(e) => deleteSession(e, s.id)}>
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
